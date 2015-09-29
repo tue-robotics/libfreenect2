@@ -333,8 +333,8 @@ public:
     depth_frame = new Frame(512, 424, 4);
   }
 
-#define ORIG_DECODE_PIXEL_MEASUREMENT 1
-#define ALL_DECODE_PIXELS 0
+#define ORIG_DECODE_PIXEL_MEASUREMENT 0
+#define ALL_DECODE_PIXELS 1
 
   int32_t decodePixelMeasurement(unsigned char* data, int sub, int x, int y)
   {
@@ -400,13 +400,16 @@ public:
     return lut11to16[((i1 | i2) & 2047)];
 #else
 #if ALL_DECODE_PIXELS
-    if (x < 0 || y < 0 || 511 < x || 423 < y)
+//    if (x < 0 || y < 0 || 511 < x || 423 < y)
+//    {
+//      return lut11to16[0];
+//    }
 #else
     if (x < 1 || y < 0 || 510 < x || 423 < y)
-#endif
     {
       return lut11to16[0];
     }
+#endif
 
     int r1zi = (x >> 2) + ((x & 0x3) << 7); // Range 0..511
     r1zi = r1zi * 11L; // Range 0..5621
@@ -467,7 +470,7 @@ public:
       }
   }
 
-#define ORIG_PROCESS_MEASUREMENT 1
+#define ORIG_PROCESS_MEASUREMENT 0
 
   /**
    * Process measurement (all three layers).
