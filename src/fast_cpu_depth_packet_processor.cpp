@@ -333,8 +333,12 @@ public:
     depth_frame = new Frame(512, 424, 4);
   }
 
+#define ORIG_DECODE_PIXEL_MEASUREMENT 1
+#define ALL_DECODE_PIXELS 0
+
   int32_t decodePixelMeasurement(unsigned char* data, int sub, int x, int y)
   {
+#if ORIG_DECODE_PIXEL_MEASUREMENT
     // 298496 = 512 * 424 * 11 / 8 = number of bytes per sub image
     uint16_t *ptr = reinterpret_cast<uint16_t *>(data + 298496 * sub);
     int i = y < 212 ? y + 212 : 423 - y;
@@ -394,6 +398,45 @@ public:
     i2 = i2 << r4wi;
 
     return lut11to16[((i1 | i2) & 2047)];
+#else
+#if ALL_DECODE_PIXELS
+    if (x < 0 || y < 0 || 511 < x || 423 < y)
+#else
+    if (x < 1 || y < 0 || 510 < x || 423 < y)
+#endif
+    {
+      return lut11to16[0];
+    }
+
+    int r1zi = (x >> 2) + ((x & 0x3) << 7); // Range 0..511
+    r1zi = r1zi * 11L; // Range 0..5621
+
+    // 298496 = 512 * 424 * 11 / 8 = number of bytes per sub image
+    uint16_t *ptr = reinterpret_cast<uint16_t *>(data + 298496 * sub);
+    int i = y < 212 ? y + 212 : 423 - y;
+    ptr += 352*i;
+
+    int r1yi = r1zi >> 4; // Range 0..351
+    r1zi = r1zi & 15;
+
+    uint16_t i1 = ptr[r1yi];
+    i1 = i1 >> r1zi;
+
+#if ALL_DECODE_PIXELS
+    if (r1zi > 5) // For x == 511, r1yi == 351 but r1zi == 5.
+    {
+      uint16_t i2 = ptr[r1yi + 1];
+      i2 = i2 << (16 - r1zi);
+      i1 |= i2;
+    }
+#else
+    uint16_t i2 = ptr[r1yi + 1];
+    i2 = i2 << (16 - r1zi);
+    i1 |= i2;
+#endif
+
+    return lut11to16[i1 & 2047];
+#endif
   }
 
   /**
@@ -424,6 +467,8 @@ public:
       }
   }
 
+#define ORIG_PROCESS_MEASUREMENT 1
+
   /**
    * Process measurement (all three layers).
    * @param [in] trig_table Trigonometry tables.
@@ -435,6 +480,7 @@ public:
    */
   void processMeasurementTriple(float trig_table[512*424][6], float abMultiplierPerFrq, int x, int y, const int32_t* m, float* m_out)
   {
+#if ORIG_PROCESS_MEASUREMENT
     int offset = y * 512 + x;
     float cos_tmp0 = trig_table[offset][0];
     float cos_tmp1 = trig_table[offset][1];
@@ -473,6 +519,54 @@ public:
     m_out[0] = tmp3; // ir image a
     m_out[1] = tmp4; // ir image b
     m_out[2] = tmp5; // ir amplitude
+#else
+    float zmultiplier = z_table.at(y, x);
+    if (0 < zmultiplier)
+    {
+      bool saturated = (m[0] == 32767 || m[1] == 32767 || m[2] == 32767);
+      if (!saturated)
+      {
+        int offset = y * 512 + x;
+        float cos_tmp0 = trig_table[offset][0];
+        float cos_tmp1 = trig_table[offset][1];
+        float cos_tmp2 = trig_table[offset][2];
+
+        float sin_negtmp0 = trig_table[offset][3];
+        float sin_negtmp1 = trig_table[offset][4];
+        float sin_negtmp2 = trig_table[offset][5];
+
+        // formula given in Patent US 8,587,771 B2
+        float ir_image_a = cos_tmp0 * m[0] + cos_tmp1 * m[1] + cos_tmp2 * m[2];
+        float ir_image_b = sin_negtmp0 * m[0] + sin_negtmp1 * m[1] + sin_negtmp2 * m[2];
+
+        // only if modeMask & 32 != 0;
+        if(true)//(modeMask & 32) != 0)
+        {
+            ir_image_a *= abMultiplierPerFrq;
+            ir_image_b *= abMultiplierPerFrq;
+        }
+        float ir_amplitude = std::sqrt(ir_image_a * ir_image_a + ir_image_b * ir_image_b) * params.ab_multiplier;
+
+        m_out[0] = ir_image_a;
+        m_out[1] = ir_image_b;
+        m_out[2] = ir_amplitude;
+      }
+      else
+      {
+        // Saturated pixel.
+        m_out[0] = 0;
+        m_out[1] = 0;
+        m_out[2] = 65535.0;
+      }
+    }
+    else
+    {
+      // Invalid pixel.
+      m_out[0] = 0;
+      m_out[1] = 0;
+      m_out[2] = 0;
+    }
+#endif
   }
 
   /**
