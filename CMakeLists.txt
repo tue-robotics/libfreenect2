@@ -109,6 +109,7 @@ SET(SOURCES
   src/depth_packet_stream_parser.cpp
   src/depth_packet_processor.cpp
   src/cpu_depth_packet_processor.cpp
+  src/fast_cpu_depth_packet_processor.cpp
   src/resource.cpp
   src/command_transaction.cpp
   src/registration.cpp
@@ -241,3 +242,6 @@ IF(BUILD_EXAMPLES)
   MESSAGE(STATUS "Configurating examples")
   ADD_SUBDIRECTORY(${MY_DIR}/examples)
 ENDIF()
+
+ADD_EXECUTABLE(benchmark tools/benchmark.cpp)
+TARGET_LINK_LIBRARIES(benchmark freenect2)
