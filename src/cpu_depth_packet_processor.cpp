@@ -41,6 +41,8 @@
 #include <cmath>
 #include <limits>
 
+#include <iostream>
+
 /**
  * Vector class.
  * @tparam ScalarT Type of the elements.
@@ -306,6 +308,8 @@ public:
 
   bool flip_ptables;
 
+  std::ofstream file_out_;
+
   CpuDepthPacketProcessorImpl()
   {
     newIrFrame();
@@ -315,6 +319,47 @@ public:
     enable_edge_filter = true;
 
     flip_ptables = true;
+
+    // - - - - - - - - - - - - - - - - - - -
+    // Open file for writing depth data
+
+    // Create name YYYY-MM-DD-hh-mm-ss-depth.kt2
+    time_t     now = time(0);
+    struct tm  tstruct;
+    char       buf[80];
+    tstruct = *localtime(&now);
+    strftime(buf, sizeof(buf), "%Y-%m-%d-%H-%M-%S-depth.kct2", &tstruct);
+
+    // Open file
+    file_out_.open(buf);
+
+    // Write file header (for recognizing file type)
+    file_out_.write("kct2", 4);
+
+    // Write file type version
+    uint32_t file_version = 1;
+    file_out_.write(reinterpret_cast<char*>(&file_version), sizeof(file_version));
+
+  }
+
+  ~CpuDepthPacketProcessorImpl()
+  {
+      if (file_out_.is_open())
+          file_out_.close();
+  }
+
+  void writeDepthPacket(const DepthPacket& packet)
+  {
+      std::cout << "[CpuDepthPacketProcessor] Writing depth packet " << packet.sequence << " to file" << std::endl;
+
+      uint32_t time = packet.timestamp;
+      uint32_t seq = packet.sequence;
+      uint32_t size = packet.buffer_length;
+
+      file_out_.write(reinterpret_cast<char*>(&time), sizeof(time));  // write time
+      file_out_.write(reinterpret_cast<char*>(&seq), sizeof(seq));    // write sequence
+      file_out_.write(reinterpret_cast<char*>(&size), sizeof(size));  // write size
+      file_out_.write(reinterpret_cast<char*>(packet.buffer), size);  // write data
   }
 
   /** Allocate a new IR frame. */
@@ -878,6 +923,12 @@ void CpuDepthPacketProcessor::loadP0TablesFromCommandResponse(unsigned char* buf
     return;
   }
 
+  std::cout << "[CpuDepthPacketProcessor] Writing P0 tables to file" << std::endl;
+
+  uint32_t table_size = sizeof(libfreenect2::protocol::P0TablesResponse);
+  impl_->file_out_.write(reinterpret_cast<char*>(&table_size), sizeof(table_size));  // write time
+  impl_->file_out_.write(reinterpret_cast<char*>(p0table), table_size);
+
   if(impl_->flip_ptables)
   {
     flipHorizontal(Mat<uint16_t>(424, 512, p0table->p0table0), impl_->p0_table0);
@@ -1011,6 +1062,10 @@ void CpuDepthPacketProcessor::load11To16LutFromFile(const char* filename)
 void CpuDepthPacketProcessor::process(const DepthPacket &packet)
 {
   if(listener_ == 0) return;
+
+  // Write every 30th packet to file
+//  if (packet.sequence % 30 == 0)
+      impl_->writeDepthPacket(packet);
 
   impl_->startTiming();
 
