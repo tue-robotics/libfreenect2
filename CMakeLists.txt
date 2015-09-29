@@ -243,5 +243,13 @@ IF(BUILD_EXAMPLES)
   ADD_SUBDIRECTORY(${MY_DIR}/examples)
 ENDIF()
 
+find_package(OpenCV REQUIRED)
+
+include_directories(
+    ${OpenCV_INCLUDE_DIRS}
+)
+
 ADD_EXECUTABLE(benchmark tools/benchmark.cpp)
 TARGET_LINK_LIBRARIES(benchmark freenect2)
+#target_link_libraries(benchmark ${OpenCV_LIBRARIES})
+

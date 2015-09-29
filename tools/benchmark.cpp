@@ -1,7 +1,11 @@
 #include "libfreenect2/depth_packet_processor.h"
 
+#include "timer.h"
+
 #include <iostream>
 #include <fstream>
+
+//#include <opencv2/highgui/highgui.hpp>
 
 // ----------------------------------------------------------------------------------------------------
 
@@ -103,6 +107,22 @@ private:
 
 // ----------------------------------------------------------------------------------------------------
 
+struct Listener : public libfreenect2::FrameListener
+{
+
+    libfreenect2::Frame* depth_frame;
+
+    bool onNewFrame(libfreenect2::Frame::Type type, libfreenect2::Frame *frame)
+    {
+        if (type == libfreenect2::Frame::Depth)
+            depth_frame = frame;
+
+        return true;
+    }
+};
+
+// ----------------------------------------------------------------------------------------------------
+
 int main(int argc, char **argv)
 {
     if (argc < 2)
@@ -118,24 +138,40 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    Listener listener;
+
     libfreenect2::CpuDepthPacketProcessor processor_orig;
     processor_orig.load11To16LutFromFile("11to16.bin");
     processor_orig.loadXTableFromFile("xTable.bin");
     processor_orig.loadZTableFromFile("zTable.bin");
     processor_orig.loadP0TablesFromCommandResponse(reader.p0_table(), reader.p0_table_size());
+    processor_orig.setFrameListener(&listener);
 
     libfreenect2::fast::CpuDepthPacketProcessor processor_fast;
     processor_fast.load11To16LutFromFile("11to16.bin");
     processor_fast.loadXTableFromFile("xTable.bin");
     processor_fast.loadZTableFromFile("zTable.bin");
     processor_fast.loadP0TablesFromCommandResponse(reader.p0_table(), reader.p0_table_size());
+    processor_fast.setFrameListener(&listener);
 
     libfreenect2::DepthPacket packet;
     packet.buffer = 0;
 
     while (reader.nextPacket(packet))
-    {
-        std::cout << packet.sequence << " " << packet.timestamp << " " << packet.buffer_length << std::endl;
+    {       
+        Timer t;
+        processor_orig.process(packet);
+        std::cout << "Original processing took: " << t.getElapsedTimeInMilliSec() << " ms" << std::endl;
+
+        Timer t2;
+        processor_fast.process(packet);
+        std::cout << "Fast processing took:     " << t2.getElapsedTimeInMilliSec() << " ms" << std::endl;
+
+        std::cout << std::endl;
+
+//        cv::Mat canvas(listener.depth_frame->height, listener.depth_frame->width, CV_32FC1, listener.depth_frame->data);
+//        cv::imshow("depth", canvas / 5000);
+//        cv::waitKey();
     }
 
     // Make sure we clean up the packet buffer
