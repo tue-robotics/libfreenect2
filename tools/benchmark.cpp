@@ -10,9 +10,14 @@ class DepthFileReader
 
 public:
 
-    ~DepthFileReader()
+    DepthFileReader() : p0_table_(0)
     {
+    }
+
+    ~DepthFileReader()
+    {        
         file_in_.close();
+        delete p0_table_;
     }
 
     bool open(const std::string& filename)
@@ -39,14 +44,24 @@ public:
             return false;
         }
 
+        // - - - - - - - - - - - - - - -
+        // Read p0 table
+
+        delete p0_table_;
+
+        file_in_.read(reinterpret_cast<char*>(&p0_table_size_), sizeof(p0_table_size_));
+
+        p0_table_ = new unsigned char[p0_table_size_];
+        file_in_.read(reinterpret_cast<char*>(p0_table_), p0_table_size_);
+
+        std::cout << "P0 table: " << p0_table_size_ << std::endl;
+
         return true;
     }
 
     bool nextPacket(libfreenect2::DepthPacket& packet)
     {
-        uint32_t time = packet.timestamp;
-        uint32_t seq = packet.sequence;
-        uint32_t size = packet.buffer_length;
+        uint32_t time, seq, size;
 
         file_in_.read(reinterpret_cast<char*>(&time), sizeof(time));
         file_in_.read(reinterpret_cast<char*>(&seq), sizeof(seq));
@@ -70,11 +85,19 @@ public:
         return true;
     }
 
+    unsigned char* p0_table() { return p0_table_; }
+
+    uint32_t p0_table_size() const { return p0_table_size_; }
+
 private:
 
     uint32_t file_version_;
 
     std::ifstream file_in_;
+
+    unsigned char* p0_table_;
+
+    uint32_t p0_table_size_;
 
 };
 
@@ -88,23 +111,24 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    libfreenect2::CpuDepthPacketProcessor processor_orig;
-    processor_orig.load11To16LutFromFile("11to16.bin");
-    processor_orig.loadXTableFromFile("xTable.bin");
-    processor_orig.loadZTableFromFile("zTable.bin");
-
-    libfreenect2::fast::CpuDepthPacketProcessor processor_fast;
-    processor_fast.load11To16LutFromFile("11to16.bin");
-    processor_fast.loadXTableFromFile("xTable.bin");
-    processor_fast.loadZTableFromFile("zTable.bin");
-
-
     DepthFileReader reader;
     if (!reader.open(argv[1]))
     {
         std::cerr << "Could not open file" << std::endl;
         return 1;
     }
+
+    libfreenect2::CpuDepthPacketProcessor processor_orig;
+    processor_orig.load11To16LutFromFile("11to16.bin");
+    processor_orig.loadXTableFromFile("xTable.bin");
+    processor_orig.loadZTableFromFile("zTable.bin");
+    processor_orig.loadP0TablesFromCommandResponse(reader.p0_table(), reader.p0_table_size());
+
+    libfreenect2::fast::CpuDepthPacketProcessor processor_fast;
+    processor_fast.load11To16LutFromFile("11to16.bin");
+    processor_fast.loadXTableFromFile("xTable.bin");
+    processor_fast.loadZTableFromFile("zTable.bin");
+    processor_fast.loadP0TablesFromCommandResponse(reader.p0_table(), reader.p0_table_size());
 
     libfreenect2::DepthPacket packet;
     packet.buffer = 0;
