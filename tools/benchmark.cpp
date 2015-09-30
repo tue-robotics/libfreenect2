@@ -204,11 +204,14 @@ int main(int argc, char **argv)
             ++f_fast;
         }
 
-        std::cout << std::endl;
-        std::cout << "Validity:" << std::endl;
-        std::cout << "    Max difference  = " << max_diff / 1000 << " meter" << std::endl;
-        std::cout << "    False positives = " << (float)num_false_positives / frame_size << " % of pixels" << std::endl;
-        std::cout << "    False negatives = " << (float)num_false_negatives / frame_size << " % of pixels" << std::endl;
+        if (max_diff != 0.0 || num_false_positives != 0 || num_false_negatives != 0)
+        {
+            std::cout << std::endl;
+            std::cout << "Validity:" << std::endl;
+            std::cout << "    Max difference  = " << max_diff / 1000 << " meter" << std::endl;
+            std::cout << "    False positives = " << (float)num_false_positives / frame_size << " % of pixels" << std::endl;
+            std::cout << "    False negatives = " << (float)num_false_negatives / frame_size << " % of pixels" << std::endl;
+        }
 
         std::cout << std::endl;
 
