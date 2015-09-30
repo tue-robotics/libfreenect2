@@ -164,6 +164,7 @@ int main(int argc, char **argv)
     libfreenect2::DepthPacket packet;
     packet.buffer = 0;
 
+    bool found_differences = false;
     double total_diff = 0;
     double biggest_diff = 0;
     double smallest_diff = 0;
@@ -234,6 +235,7 @@ int main(int argc, char **argv)
             std::cout << "    Max difference  = " << max_diff / 1000 << " meter" << std::endl;
             std::cout << "    False positives = " << (float)num_false_positives / frame_size << " % of pixels" << std::endl;
             std::cout << "    False negatives = " << (float)num_false_negatives / frame_size << " % of pixels" << std::endl;
+            found_differences = true;
         }
 
         std::cout << std::endl;
@@ -246,7 +248,15 @@ int main(int argc, char **argv)
     {
         std::cout << "----------------------------------------" << std::endl;
         std::cout << std::endl;
-        std::cout << "Total difference    " << total_diff << " ms" << std::endl;
+
+        if (found_differences)
+        {
+            std::cout << "DIFFERENCES FOUND!" << std::endl;
+            std::cout << "DIFFERENCES FOUND!" << std::endl;
+            std::cout << std::endl;
+        }
+
+        std::cout << "Total difference    " << total_diff << " ms (over " << count << " frames)" << std::endl;
         std::cout << "Average difference  " << total_diff / count << " ms" << std::endl;
         std::cout << std::endl;
         std::cout << "Biggest difference  " << biggest_diff << " ms" << std::endl;
