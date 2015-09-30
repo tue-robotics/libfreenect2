@@ -41,6 +41,8 @@
 #include <cmath>
 #include <limits>
 
+#include "atan2.h"
+
 /**
  * Vector class.
  * @tparam ScalarT Type of the elements.
@@ -309,6 +311,8 @@ public:
 
   bool flip_ptables;
 
+  Atan2 atan2;
+
   CpuDepthPacketProcessorImpl()
   {
     newIrFrame();
@@ -318,6 +322,8 @@ public:
     enable_edge_filter = true;
 
     flip_ptables = true;
+
+    atan2.initialize();
   }
 
   /** Allocate a new IR frame. */
@@ -452,7 +458,8 @@ public:
    */
   void transformMeasurements(float* m)
   {
-    float tmp0 = std::atan2((m[1]), (m[0]));
+//    float tmp0 = std::atan2((m[1]), (m[0]));
+      float tmp0 = atan2.atan2((m[1]), (m[0]));
     tmp0 = tmp0 < 0 ? tmp0 + M_PI * 2.0f : tmp0;
     tmp0 = (tmp0 != tmp0) ? 0 : tmp0;
 
@@ -685,9 +692,9 @@ public:
 
         float ir_x = slope_positive ? ir_min_ : ir_max_;
 
-        ir_x = std::log(ir_x);
-        ir_x = (ir_x * params.ab_confidence_slope * 0.301030f + params.ab_confidence_offset) * 3.321928f;
-        ir_x = std::exp(ir_x);
+//        ir_x = std::log(ir_x);
+//        ir_x = (ir_x * params.ab_confidence_slope * 0.301030f + params.ab_confidence_offset) * 3.321928f;
+//        ir_x = std::exp(ir_x);
         ir_x = std::min(params.max_dealias_confidence, std::max(params.min_dealias_confidence, ir_x));
         ir_x *= ir_x;
 
