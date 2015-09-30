@@ -429,11 +429,11 @@ public:
             ir_image_a *= abMultiplierPerFrq;
             ir_image_b *= abMultiplierPerFrq;
         }
-        float ir_amplitude = std::sqrt(ir_image_a * ir_image_a + ir_image_b * ir_image_b) * params.ab_multiplier;
+//        float ir_amplitude = std::sqrt(ir_image_a * ir_image_a + ir_image_b * ir_image_b) * params.ab_multiplier;
 
         m_out[0] = ir_image_a;
         m_out[1] = ir_image_b;
-        m_out[2] = ir_amplitude;
+//        m_out[2] = ir_amplitude;
       }
       else
       {
@@ -463,7 +463,8 @@ public:
     tmp0 = tmp0 < 0 ? tmp0 + M_PI * 2.0f : tmp0;
     tmp0 = (tmp0 != tmp0) ? 0 : tmp0;
 
-    float tmp1 = std::sqrt(m[0] * m[0] + m[1] * m[1]) * params.ab_multiplier;
+//    float tmp1 = std::sqrt(m[0] * m[0] + m[1] * m[1]) * params.ab_multiplier;
+    float tmp1 = (m[0] * m[0] + m[1] * m[1]) * params.ab_multiplier;
 
     m[0] = tmp0; // phase
     m[1] = tmp1; // ir amplitude - (possibly bilateral filtered)
@@ -615,22 +616,6 @@ public:
     float ir_sum = m0[1] + m1[1] + m2[1];
 
     float phase;
-    // if(DISABLE_DISAMBIGUATION)
-    if(false)
-    {
-        //r0.yz = r3.zx + r4.zx // add
-        //r0.yz = r5.xz + r0.zy // add
-        float phase = m0[0] + m1[0] + m2[0]; // r0.y
-        float tmp1 = m0[2] + m1[2] + m2[2];  // r0.z
-
-        //r7.xyz = r3.zxy + r4.zxy // add
-        //r4.xyz = r5.zyx + r7.xzy // add
-        float tmp2 = m0[0] + m1[0] + m2[0]; // r4.z
-        //r3.zw = r4.xy // mov
-        float tmp3 = m0[2] + m1[2] + m2[2]; // r3.z
-        float tmp4 = m0[1] + m1[1] + m2[1]; // r3.w
-    }
-    else
     {
       float ir_min = std::min(std::min(m0[1], m1[1]), m2[1]);
 
@@ -689,6 +674,9 @@ public:
 
         float ir_min_ = std::min(std::min(m0[1], m1[1]), m2[1]);
         float ir_max_ = std::max(std::max(m0[1], m1[1]), m2[1]);
+
+        ir_min_ = std::sqrt(ir_min_);
+        ir_max_ = std::sqrt(ir_max_);
 
         float ir_x = slope_positive ? ir_min_ : ir_max_;
 
@@ -1006,13 +994,38 @@ void CpuDepthPacketProcessor::process(const DepthPacket &packet)
   ;
   Mat<unsigned char> m_max_edge_test(424, 512);
 
-  float *m_ptr = (m.ptr(0, 0)->val);
+  float *m_base = (m.ptr(0, 0)->val);
+  float *m_ptr = m_base;
 
   for(int y = 0; y < 424; ++y)
     for(int x = 0; x < 512; ++x, m_ptr += 9)
     {
       impl_->processPixelStage1(x, y, packet.buffer, m_ptr + 0, m_ptr + 3, m_ptr + 6);
     }
+
+//  for(int y = 0; y < 424; ++y)
+//  {
+//    m_ptr = m_base; m_base += 9;
+//    for(int x = 0; x < 512; x+=4, m_ptr += 4*9)
+//    {
+//      impl_->processPixelStage1(x, y, packet.buffer, m_ptr + 0, m_ptr + 3, m_ptr + 6);
+//    }
+//    m_ptr = m_base; m_base += 9;
+//    for(int x = 1; x < 512; x+=4, m_ptr += 4*9)
+//    {
+//      impl_->processPixelStage1(x, y, packet.buffer, m_ptr + 0, m_ptr + 3, m_ptr + 6);
+//    }
+//    m_ptr = m_base; m_base += 9;
+//    for(int x = 2; x < 512; x+=4, m_ptr += 4*9)
+//    {
+//      impl_->processPixelStage1(x, y, packet.buffer, m_ptr + 0, m_ptr + 3, m_ptr + 6);
+//    }
+//    m_ptr = m_base; m_base += (512-3) * 9;
+//    for(int x = 3; x < 512; x+=4, m_ptr += 4*9)
+//    {
+//      impl_->processPixelStage1(x, y, packet.buffer, m_ptr + 0, m_ptr + 3, m_ptr + 6);
+//    }
+//  }
 
   // bilateral filtering
   if(impl_->enable_bilateral_filter)
