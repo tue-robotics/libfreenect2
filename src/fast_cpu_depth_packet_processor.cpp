@@ -333,91 +333,15 @@ public:
     depth_frame = new Frame(512, 424, 4);
   }
 
-#define ORIG_DECODE_PIXEL_MEASUREMENT 0
-#define ALL_DECODE_PIXELS 1
-
   int32_t decodePixelMeasurement(unsigned char* data, int sub, int x, int y)
   {
-#if ORIG_DECODE_PIXEL_MEASUREMENT
     // 298496 = 512 * 424 * 11 / 8 = number of bytes per sub image
     uint16_t *ptr = reinterpret_cast<uint16_t *>(data + 298496 * sub);
     int i = y < 212 ? y + 212 : 423 - y;
     ptr += 352*i;
-
-    /**
-     r1.yz = r2.xxyx < l(0, 1, 0, 0) // ilt
-     r1.y = r1.z | r1.y // or
-     */
-    bool r1y = x < 1 || y < 0;
-    /*
-    r1.zw = l(0, 0, 510, 423) < r2.xxxy // ilt
-    r1.z = r1.w | r1.z // or
-    */
-    bool r1z = 510 < x || 423 < y;
-    /*
-    r1.y = r1.z | r1.y // or
-    */
-    r1y = r1y || r1z;
-    /*
-    r1.y = r1.y & l(0x1fffffff) // and
-    */
-    int r1yi = r1y ? 0xffffffff : 0x0;
-    r1yi &= 0x1fffffff;
-
-    /*
-    bfi r1.z, l(2), l(7), r2.x, l(0)
-    ushr r1.w, r2.x, l(2)
-    r1.z = r1.w + r1.z // iadd
-    */
-    int r1zi = bfi(2, 7, x, 0);
-    int r1wi = x >> 2;
-    r1zi = r1wi + r1zi;
-
-    /*
-    imul null, r1.z, r1.z, l(11)
-    ushr r1.w, r1.z, l(4)
-    r1.y = r1.w + r1.y // iadd
-    r1.w = r1.y + l(1) // iadd
-    r1.z = r1.z & l(15) // and
-    r4.w = -r1.z + l(16) // iadd
-     */
-    r1zi = (r1zi * 11L) & 0xffffffff;
-    r1wi = r1zi >> 4;
-    r1yi = r1yi + r1wi;
-    r1zi = r1zi & 15;
-    int r4wi = -r1zi + 16;
-
-    if(r1yi > 352)
-    {
-      return lut11to16[0];
-    }
-
-    int i1 = ptr[r1yi];
-    int i2 = ptr[r1yi + 1];
-    i1 = i1 >> r1zi;
-    i2 = i2 << r4wi;
-
-    return lut11to16[((i1 | i2) & 2047)];
-#else
-#if ALL_DECODE_PIXELS
-//    if (x < 0 || y < 0 || 511 < x || 423 < y)
-//    {
-//      return lut11to16[0];
-//    }
-#else
-    if (x < 1 || y < 0 || 510 < x || 423 < y)
-    {
-      return lut11to16[0];
-    }
-#endif
 
     int r1zi = (x >> 2) + ((x & 0x3) << 7); // Range 0..511
     r1zi = r1zi * 11L; // Range 0..5621
-
-    // 298496 = 512 * 424 * 11 / 8 = number of bytes per sub image
-    uint16_t *ptr = reinterpret_cast<uint16_t *>(data + 298496 * sub);
-    int i = y < 212 ? y + 212 : 423 - y;
-    ptr += 352*i;
 
     int r1yi = r1zi >> 4; // Range 0..351
     r1zi = r1zi & 15;
@@ -425,21 +349,14 @@ public:
     uint16_t i1 = ptr[r1yi];
     i1 = i1 >> r1zi;
 
-#if ALL_DECODE_PIXELS
     if (r1zi > 5) // For x == 511, r1yi == 351 but r1zi == 5.
     {
       uint16_t i2 = ptr[r1yi + 1];
       i2 = i2 << (16 - r1zi);
       i1 |= i2;
     }
-#else
-    uint16_t i2 = ptr[r1yi + 1];
-    i2 = i2 << (16 - r1zi);
-    i1 |= i2;
-#endif
 
     return lut11to16[i1 & 2047];
-#endif
   }
 
   /**
@@ -470,8 +387,6 @@ public:
       }
   }
 
-#define ORIG_PROCESS_MEASUREMENT 0
-
   /**
    * Process measurement (all three layers).
    * @param [in] trig_table Trigonometry tables.
@@ -483,46 +398,6 @@ public:
    */
   void processMeasurementTriple(float trig_table[512*424][6], float abMultiplierPerFrq, int x, int y, const int32_t* m, float* m_out)
   {
-#if ORIG_PROCESS_MEASUREMENT
-    int offset = y * 512 + x;
-    float cos_tmp0 = trig_table[offset][0];
-    float cos_tmp1 = trig_table[offset][1];
-    float cos_tmp2 = trig_table[offset][2];
-
-    float sin_negtmp0 = trig_table[offset][3];
-    float sin_negtmp1 = trig_table[offset][4];
-    float sin_negtmp2 = trig_table[offset][5];
-
-    float zmultiplier = z_table.at(y, x);
-    bool cond0 = 0 < zmultiplier;
-    bool cond1 = (m[0] == 32767 || m[1] == 32767 || m[2] == 32767) && cond0;
-
-    // formula given in Patent US 8,587,771 B2
-    float tmp3 = cos_tmp0 * m[0] + cos_tmp1 * m[1] + cos_tmp2 * m[2];
-    float tmp4 = sin_negtmp0 * m[0] + sin_negtmp1 * m[1] + sin_negtmp2 * m[2];
-
-    // only if modeMask & 32 != 0;
-    if(true)//(modeMask & 32) != 0)
-    {
-        tmp3 *= abMultiplierPerFrq;
-        tmp4 *= abMultiplierPerFrq;
-    }
-    float tmp5 = std::sqrt(tmp3 * tmp3 + tmp4 * tmp4) * params.ab_multiplier;
-
-    // invalid pixel because zmultiplier < 0 ??
-    tmp3 = cond0 ? tmp3 : 0;
-    tmp4 = cond0 ? tmp4 : 0;
-    tmp5 = cond0 ? tmp5 : 0;
-
-    // invalid pixel because saturated?
-    tmp3 = !cond1 ? tmp3 : 0;
-    tmp4 = !cond1 ? tmp4 : 0;
-    tmp5 = !cond1 ? tmp5 : 65535.0; // some kind of norm calculated from tmp3 and tmp4
-
-    m_out[0] = tmp3; // ir image a
-    m_out[1] = tmp4; // ir image b
-    m_out[2] = tmp5; // ir amplitude
-#else
     float zmultiplier = z_table.at(y, x);
     if (0 < zmultiplier)
     {
@@ -569,7 +444,6 @@ public:
       m_out[1] = 0;
       m_out[2] = 0;
     }
-#endif
   }
 
   /**
