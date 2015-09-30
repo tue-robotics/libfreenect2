@@ -3,6 +3,7 @@
 #include "timer.h"
 
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 
 #include <cmath>
@@ -21,7 +22,7 @@ public:
     }
 
     ~DepthFileReader()
-    {        
+    {
         file_in_.close();
         delete p0_table_;
     }
@@ -163,8 +164,13 @@ int main(int argc, char **argv)
     libfreenect2::DepthPacket packet;
     packet.buffer = 0;
 
+    double total_diff = 0;
+    double biggest_diff = 0;
+    double smallest_diff = 0;
+    int count = 0;
+
     while (reader.nextPacket(packet))
-    {       
+    {
         std::cout << "----------------------------------------" << std::endl;
         std::cout << "Frame " << packet.sequence << std::endl << std::endl;
 
@@ -172,13 +178,30 @@ int main(int argc, char **argv)
 
         Timer t;
         processor_orig.process(packet);
-        std::cout << "    Original processing took: " << t.getElapsedTimeInMilliSec() << " ms" << std::endl;
+        double delta_t = t.getElapsedTimeInMilliSec();
+        std::cout << "    Original processing took: " << delta_t << " ms" << std::endl;
         libfreenect2::Frame* depth_frame_orig = listener.depth_frame;
 
         Timer t2;
         processor_fast.process(packet);
-        std::cout << "    Fast processing took:     " << t2.getElapsedTimeInMilliSec() << " ms" << std::endl;
+        double delta_t2 = t2.getElapsedTimeInMilliSec();
+        double diff = delta_t2 - delta_t;
+        std::cout << "    Fast processing took:     " << delta_t2 << " ms (difference " << diff << " ms)" << std::endl;
         libfreenect2::Frame* depth_frame_fast = listener.depth_frame;
+
+        total_diff += diff;
+        if (count == 0)
+        {
+            biggest_diff = diff;
+            smallest_diff = diff;
+        }
+        else
+        {
+            biggest_diff = std::max(biggest_diff, diff);
+            smallest_diff = std::min(smallest_diff, diff);
+        }
+        count++;
+
 
         float* f_orig = reinterpret_cast<float*>(depth_frame_orig->data);
         float* f_fast = reinterpret_cast<float*>(depth_frame_fast->data);
@@ -218,6 +241,17 @@ int main(int argc, char **argv)
 //        cv::Mat canvas(depth_frame_orig->height, depth_frame_orig->width, CV_32FC1, depth_frame_orig->data);
 //        cv::imshow("depth", canvas / 5000);
 //        cv::waitKey();
+    }
+    if (count > 0)
+    {
+        std::cout << "----------------------------------------" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Total difference    " << total_diff << " ms" << std::endl;
+        std::cout << "Average difference  " << total_diff / count << " ms" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Biggest difference  " << biggest_diff << " ms" << std::endl;
+        std::cout << "Smallest difference " << smallest_diff << " ms" << std::endl;
+        std::cout << std::endl;
     }
 
     // Make sure we clean up the packet buffer
