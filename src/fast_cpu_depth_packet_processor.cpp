@@ -773,33 +773,28 @@ void CpuDepthPacketProcessor::process(const DepthPacket &packet)
   impl_->ir_frame->sequence = packet.sequence;
   impl_->depth_frame->sequence = packet.sequence;
 
-  Mat<Vec<float, 9> > m(424, 512);
+  Mat<float> out_depth(424, 512, impl_->depth_frame->data);
+  Vec<Vec<float, 9>, 512> m_line;
 
-  float *m_ptr = (m.ptr(0, 0)->val);
+  float *m_start = m_line.val[0].val;
+  float *m_end = m_line.val[511].val;
+  m_start[0] = m_start[1] = m_start[2] = m_start[3] = m_start[4] = m_start[5] = m_start[6] = m_start[7] = m_start[8] = 0;
+  m_end[0] = m_end[1] = m_end[2] = m_end[3] = m_end[4] = m_end[5] = m_end[6] = m_end[7] = m_end[8] = 0;
 
   for(int y = 0; y < 424; ++y)
   {
-    m_ptr[0] = m_ptr[1] = m_ptr[2] = m_ptr[3] = m_ptr[4] = m_ptr[5] = m_ptr[6] = m_ptr[7] = m_ptr[8] = 0;
-    m_ptr += 9;
-
+    float *m_ptr = m_line.val[1].val;
     for(int x = 1; x < 511; ++x, m_ptr += 9)
     {
       impl_->processPixelStage1(x, y, packet.buffer, m_ptr + 0, m_ptr + 3, m_ptr + 6);
     }
 
-    m_ptr[0] = m_ptr[1] = m_ptr[2] = m_ptr[3] = m_ptr[4] = m_ptr[5] = m_ptr[6] = m_ptr[7] = m_ptr[8] = 0;
-    m_ptr += 9;
-  }
-
-  m_ptr = (m.ptr(0, 0)->val);
-
-  Mat<float> out_depth(424, 512, impl_->depth_frame->data);
-
-  for(int y = 0; y < 424; ++y)
+    m_ptr = m_line.val[0].val;
     for(int x = 0; x < 512; ++x, m_ptr += 9)
     {
       impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, out_depth.ptr(423 - y, x));
     }
+  }
 
   impl_->stopTiming(LOG_INFO);
 
