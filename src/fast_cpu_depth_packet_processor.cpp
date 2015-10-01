@@ -486,106 +486,6 @@ public:
     processMeasurementTriple(trig_table2, params.ab_multiplier_per_frq[2], x, y, m2_raw, m2_out);
   }
 
-  /**
-   * Filter pixels in stage 1.
-   * @param x Horizontal position.
-   * @param y Vertical position.
-   * @param m Input data?
-   * @param [out] Output data.
-   * @param [out] bilateral_max_edge_test Whether the accumulated distance of each image stayed within limits.
-   */
-  void filterPixelStage1(int x, int y, const Mat<Vec<float, 9> >& m, float* m_out, bool& bilateral_max_edge_test)
-  {
-    const float *m_ptr = (m.ptr(y, x)->val);
-    bilateral_max_edge_test = true;
-
-    if(x < 1 || y < 1 || x > 510 || y > 422)
-    {
-      for(int i = 0; i < 9; ++i)
-        m_out[i] = m_ptr[i];
-    }
-    else
-    {
-      float m_normalized[2];
-      float other_m_normalized[2];
-
-      int offset = 0;
-
-      for(int i = 0; i < 3; ++i, m_ptr += 3, m_out += 3, offset += 3)
-      {
-        float norm2 = m_ptr[0] * m_ptr[0] + m_ptr[1] * m_ptr[1];
-        float inv_norm = 1.0f / std::sqrt(norm2);
-        inv_norm = (inv_norm == inv_norm) ? inv_norm : std::numeric_limits<float>::infinity();
-
-        m_normalized[0] = m_ptr[0] * inv_norm;
-        m_normalized[1] = m_ptr[1] * inv_norm;
-
-        int j = 0;
-
-        float weight_acc = 0.0f;
-        float weighted_m_acc[2] = {0.0f, 0.0f};
-
-        float threshold = (params.joint_bilateral_ab_threshold * params.joint_bilateral_ab_threshold) / (params.ab_multiplier * params.ab_multiplier);
-        float joint_bilateral_exp = params.joint_bilateral_exp;
-
-        if(norm2 < threshold)
-        {
-          threshold = 0.0f;
-          joint_bilateral_exp = 0.0f;
-        }
-
-        float dist_acc = 0.0f;
-
-        for(int yi = -1; yi < 2; ++yi)
-        {
-          for(int xi = -1; xi < 2; ++xi, ++j)
-          {
-            if(yi == 0 && xi == 0)
-            {
-              weight_acc += params.gaussian_kernel[j];
-
-              weighted_m_acc[0] += params.gaussian_kernel[j] * m_ptr[0];
-              weighted_m_acc[1] += params.gaussian_kernel[j] * m_ptr[1];
-              continue;
-            }
-
-            const float *other_m_ptr = (m.ptr(y + yi, x + xi)->val) + offset;
-            float other_norm2 = other_m_ptr[0] * other_m_ptr[0] + other_m_ptr[1] * other_m_ptr[1];
-            // TODO: maybe fix numeric problems when norm = 0 - original code uses reciprocal square root, which returns +inf for +0
-            float other_inv_norm = 1.0f / std::sqrt(other_norm2);
-            other_inv_norm = (other_inv_norm == other_inv_norm) ? other_inv_norm : std::numeric_limits<float>::infinity();
-
-            other_m_normalized[0] = other_m_ptr[0] * other_inv_norm;
-            other_m_normalized[1] = other_m_ptr[1] * other_inv_norm;
-
-            float dist = -(other_m_normalized[0] * m_normalized[0] + other_m_normalized[1] * m_normalized[1]);
-            dist += 1.0f;
-            dist *= 0.5f;
-
-            float weight = 0.0f;
-
-            if(other_norm2 >= threshold)
-            {
-              weight = (params.gaussian_kernel[j] * std::exp(-1.442695f * joint_bilateral_exp * dist));
-              dist_acc += dist;
-            }
-
-            weighted_m_acc[0] += weight * other_m_ptr[0];
-            weighted_m_acc[1] += weight * other_m_ptr[1];
-
-            weight_acc += weight;
-          }
-        }
-
-        bilateral_max_edge_test = bilateral_max_edge_test && dist_acc < params.joint_bilateral_max_edge;
-
-        m_out[0] = 0.0f < weight_acc ? weighted_m_acc[0] / weight_acc : 0.0f;
-        m_out[1] = 0.0f < weight_acc ? weighted_m_acc[1] / weight_acc : 0.0f;
-        m_out[2] = m_ptr[2];
-      }
-    }
-  }
-
   void processPixelStage2(int x, int y, float *m0, float *m1, float *m2, float *ir_out, float *depth_out, float *ir_sum_out)
   {
     //// 10th measurement
@@ -729,86 +629,6 @@ public:
     //ir_out[0] = std::min(m0[2] * ab_output_multiplier, 65535.0f);
     //ir_out[1] = std::min(m1[2] * ab_output_multiplier, 65535.0f);
     //ir_out[2] = std::min(m2[2] * ab_output_multiplier, 65535.0f);
-  }
-
-  void filterPixelStage2(int x, int y, Mat<Vec<float, 3> > &m, bool max_edge_test_ok, float *depth_out)
-  {
-    Vec<float, 3> &depth_and_ir_sum = m.at(y, x);
-    float &raw_depth = depth_and_ir_sum.val[0], &ir_sum = depth_and_ir_sum.val[2];
-
-    if(raw_depth >= params.min_depth && raw_depth <= params.max_depth)
-    {
-      if(x < 1 || y < 1 || x > 510 || y > 422)
-      {
-        *depth_out = raw_depth;
-      }
-      else
-      {
-        float ir_sum_acc = ir_sum, squared_ir_sum_acc = ir_sum * ir_sum, min_depth = raw_depth, max_depth = raw_depth;
-
-        for(int yi = -1; yi < 2; ++yi)
-        {
-          for(int xi = -1; xi < 2; ++xi)
-          {
-            if(yi == 0 && xi == 0) continue;
-
-            Vec<float, 3> &other = m.at(y + yi, x + xi);
-
-            ir_sum_acc += other.val[2];
-            squared_ir_sum_acc += other.val[2] * other.val[2];
-
-            if(0.0f < other.val[1])
-            {
-              min_depth = std::min(min_depth, other.val[1]);
-              max_depth = std::max(max_depth, other.val[1]);
-            }
-          }
-        }
-
-        float tmp0 = std::sqrt(squared_ir_sum_acc * 9.0f - ir_sum_acc * ir_sum_acc) / 9.0f;
-        float edge_avg = std::max(ir_sum_acc / 9.0f, params.edge_ab_avg_min_value);
-        tmp0 /= edge_avg;
-
-        float abs_min_diff = std::abs(raw_depth - min_depth);
-        float abs_max_diff = std::abs(raw_depth - max_depth);
-
-        float avg_diff = (abs_min_diff + abs_max_diff) * 0.5f;
-        float max_abs_diff = std::max(abs_min_diff, abs_max_diff);
-
-        bool cond0 =
-            0.0f < raw_depth &&
-            tmp0 >= params.edge_ab_std_dev_threshold &&
-            params.edge_close_delta_threshold < abs_min_diff &&
-            params.edge_far_delta_threshold < abs_max_diff &&
-            params.edge_max_delta_threshold < max_abs_diff &&
-            params.edge_avg_delta_threshold < avg_diff;
-
-        *depth_out = cond0 ? 0.0f : raw_depth;
-
-        if(!cond0)
-        {
-          if(max_edge_test_ok)
-          {
-            //float tmp1 = 1500.0f > raw_depth ? 30.0f : 0.02f * raw_depth;
-            float edge_count = 0.0f;
-
-            *depth_out = edge_count > params.max_edge_count ? 0.0f : raw_depth;
-          }
-          else
-          {
-            *depth_out = !max_edge_test_ok ? 0.0f : raw_depth;
-            *depth_out = true ? *depth_out : raw_depth;
-          }
-        }
-      }
-    }
-    else
-    {
-      *depth_out = 0.0f;
-    }
-
-    // override raw depth
-    depth_and_ir_sum.val[0] = depth_and_ir_sum.val[1];
   }
 };
 
@@ -992,11 +812,7 @@ void CpuDepthPacketProcessor::process(const DepthPacket &packet)
   impl_->ir_frame->sequence = packet.sequence;
   impl_->depth_frame->sequence = packet.sequence;
 
-  Mat<Vec<float, 9> >
-      m(424, 512),
-      m_filtered(424, 512)
-  ;
-  Mat<unsigned char> m_max_edge_test(424, 512);
+  Mat<Vec<float, 9> > m(424, 512);
 
   float *m_ptr = (m.ptr(0, 0)->val);
 
