@@ -302,7 +302,6 @@ public:
   float trig_table1[512*424][6];
   float trig_table2[512*424][6];
 
-  bool enable_bilateral_filter, enable_edge_filter;
   DepthPacketProcessor::Parameters params;
 
   Frame *ir_frame, *depth_frame;
@@ -313,9 +312,6 @@ public:
   {
     newIrFrame();
     newDepthFrame();
-
-    enable_bilateral_filter = true;
-    enable_edge_filter = true;
 
     flip_ptables = true;
   }
@@ -832,8 +828,11 @@ void CpuDepthPacketProcessor::setConfiguration(const libfreenect2::DepthPacketPr
   
   impl_->params.min_depth = config.MinDepth * 1000.0f;
   impl_->params.max_depth = config.MaxDepth * 1000.0f;
-  impl_->enable_bilateral_filter = config.EnableBilateralFilter;
-  impl_->enable_edge_filter = config.EnableEdgeAwareFilter;
+  if (config.EnableBilateralFilter || config.EnableEdgeAwareFilter)
+  {
+    printf("Filters are not supported\n");
+    exit(1);
+  }
 }
 
 /**
@@ -1015,63 +1014,15 @@ void CpuDepthPacketProcessor::process(const DepthPacket &packet)
     m_ptr += 9;
   }
 
-  // bilateral filtering
-  if(impl_->enable_bilateral_filter)
-  {
-    float *m_filtered_ptr = (m_filtered.ptr(0, 0)->val);
-    unsigned char *m_max_edge_test_ptr = m_max_edge_test.ptr(0, 0);
-
-    for(int y = 0; y < 424; ++y)
-      for(int x = 0; x < 512; ++x, m_filtered_ptr += 9, ++m_max_edge_test_ptr)
-      {
-        bool max_edge_test_val = true;
-        impl_->filterPixelStage1(x, y, m, m_filtered_ptr, max_edge_test_val);
-        *m_max_edge_test_ptr = max_edge_test_val ? 1 : 0;
-      }
-
-    m_ptr = (m_filtered.ptr(0, 0)->val);
-  }
-  else
-  {
-    m_ptr = (m.ptr(0, 0)->val);
-  }
+  m_ptr = (m.ptr(0, 0)->val);
 
   Mat<float> out_ir(424, 512, impl_->ir_frame->data), out_depth(424, 512, impl_->depth_frame->data);
 
-  if(impl_->enable_edge_filter)
-  {
-    Mat<Vec<float, 3> > depth_ir_sum(424, 512);
-    Vec<float, 3> *depth_ir_sum_ptr = depth_ir_sum.ptr(0, 0);
-    unsigned char *m_max_edge_test_ptr = m_max_edge_test.ptr(0, 0);
-
-    for(int y = 0; y < 424; ++y)
-      for(int x = 0; x < 512; ++x, m_ptr += 9, ++m_max_edge_test_ptr, ++depth_ir_sum_ptr)
-      {
-        float raw_depth, ir_sum;
-
-        impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, out_ir.ptr(423 - y, x), &raw_depth, &ir_sum);
-
-        depth_ir_sum_ptr->val[0] = raw_depth;
-        depth_ir_sum_ptr->val[1] = *m_max_edge_test_ptr == 1 ? raw_depth : 0;
-        depth_ir_sum_ptr->val[2] = ir_sum;
-      }
-
-    m_max_edge_test_ptr = m_max_edge_test.ptr(0, 0);
-
-    for(int y = 0; y < 424; ++y)
-      for(int x = 0; x < 512; ++x, ++m_max_edge_test_ptr)
-      {
-        impl_->filterPixelStage2(x, y, depth_ir_sum, *m_max_edge_test_ptr == 1, out_depth.ptr(423 - y, x));
-      }
-  }
-  else
-  {
-    for(int y = 0; y < 424; ++y)
-      for(int x = 0; x < 512; ++x, m_ptr += 9)
-      {
-        impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, out_ir.ptr(423 - y, x), out_depth.ptr(423 - y, x), 0);
-      }
-  }
+  for(int y = 0; y < 424; ++y)
+    for(int x = 0; x < 512; ++x, m_ptr += 9)
+    {
+      impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, out_ir.ptr(423 - y, x), out_depth.ptr(423 - y, x), 0);
+    }
 
   impl_->stopTiming(LOG_INFO);
 
