@@ -253,3 +253,6 @@ ADD_EXECUTABLE(benchmark tools/benchmark.cpp)
 TARGET_LINK_LIBRARIES(benchmark freenect2)
 #target_link_libraries(benchmark ${OpenCV_LIBRARIES})
 
+TARGET_LINK_LIBRARIES(freenect2 ${OpenCV_LIBRARIES})
+
+

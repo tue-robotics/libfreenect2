@@ -41,6 +41,8 @@
 #include <cmath>
 #include <limits>
 
+#include <opencv2/highgui/highgui.hpp>
+
 /**
  * Vector class.
  * @tparam ScalarT Type of the elements.
@@ -1054,56 +1056,101 @@ void CpuDepthPacketProcessor::process(const DepthPacket &packet)
     m_ptr = (m.ptr(0, 0)->val);
   }
 
-  Mat<float> out_ir(424, 512, impl_->ir_frame->data), out_depth(424, 512, impl_->depth_frame->data);
-
-  if(impl_->enable_edge_filter)
+  m_ptr = (m.ptr(0, 0)->val);
+  for(int y = 0; y < 424; ++y)
   {
-    Mat<Vec<float, 3> > depth_ir_sum(424, 512);
-    Vec<float, 3> *depth_ir_sum_ptr = depth_ir_sum.ptr(0, 0);
-    unsigned char *m_max_edge_test_ptr = m_max_edge_test.ptr(0, 0);
-
-    for(int y = 0; y < 424; ++y)
-      for(int x = 0; x < 512; ++x, m_ptr += 9, ++m_max_edge_test_ptr, ++depth_ir_sum_ptr)
-      {
-        float raw_depth, ir_sum;
-
-        impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, out_ir.ptr(423 - y, x), &raw_depth, &ir_sum);
-
-        depth_ir_sum_ptr->val[0] = raw_depth;
-        depth_ir_sum_ptr->val[1] = *m_max_edge_test_ptr == 1 ? raw_depth : 0;
-        depth_ir_sum_ptr->val[2] = ir_sum;
-      }
-
-    m_max_edge_test_ptr = m_max_edge_test.ptr(0, 0);
-
-    for(int y = 0; y < 424; ++y)
-      for(int x = 0; x < 512; ++x, ++m_max_edge_test_ptr)
-      {
-        impl_->filterPixelStage2(x, y, depth_ir_sum, *m_max_edge_test_ptr == 1, out_depth.ptr(423 - y, x));
-      }
-  }
-  else
-  {
-    for(int y = 0; y < 424; ++y)
-      for(int x = 0; x < 512; ++x, m_ptr += 9)
-      {
-        impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, out_ir.ptr(423 - y, x), out_depth.ptr(423 - y, x), 0);
-      }
-  }
-
-  impl_->stopTiming(LOG_INFO);
-
-  if (listener_ != 0 ){
-    if(listener_->onNewFrame(Frame::Ir, impl_->ir_frame))
+    for(int x = 0; x < 512; ++x, m_ptr += 9)
     {
-      impl_->newIrFrame();
-    }
-
-    if(listener_->onNewFrame(Frame::Depth, impl_->depth_frame))
-    {
-      impl_->newDepthFrame();
+//      impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, out_ir.ptr(423 - y, x), out_depth.ptr(423 - y, x), 0);
+      impl_->transformMeasurements(m_ptr + 0);
+      impl_->transformMeasurements(m_ptr + 3);
+      impl_->transformMeasurements(m_ptr + 6);
     }
   }
+
+  {
+    int i = 0;
+    for(int y = 0; y < 3; ++y)
+    {
+      cv::Mat canvas(424, 512*3, CV_32FC1, 0.0);
+
+      for(int x = 0; x < 3; ++x)
+      {
+        cv::Mat img(424, 512, CV_32FC1, 0.0);
+
+        float* m_ptr = (m.ptr(0, 0)->val) + i;
+        for(int j = 0; j < img.cols * img.rows; ++j, m_ptr += 9)
+        {
+          if (x > 0 || *(m_ptr + 1) > 10)
+            img.at<float>(j) = *m_ptr;
+        }
+
+        img.copyTo(canvas(cv::Rect(512 * x, 0, 512, 424)));
+
+        ++i;
+      }
+
+      std::stringstream s;
+      s << y;
+
+      cv::imshow(s.str(), canvas / 7);
+
+    }
+    cv::waitKey();
+  }
+
+
+
+//  Mat<float> out_ir(424, 512, impl_->ir_frame->data), out_depth(424, 512, impl_->depth_frame->data);
+
+//  if(impl_->enable_edge_filter)
+//  {
+//    Mat<Vec<float, 3> > depth_ir_sum(424, 512);
+//    Vec<float, 3> *depth_ir_sum_ptr = depth_ir_sum.ptr(0, 0);
+//    unsigned char *m_max_edge_test_ptr = m_max_edge_test.ptr(0, 0);
+
+//    for(int y = 0; y < 424; ++y)
+//      for(int x = 0; x < 512; ++x, m_ptr += 9, ++m_max_edge_test_ptr, ++depth_ir_sum_ptr)
+//      {
+//        float raw_depth, ir_sum;
+
+//        impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, out_ir.ptr(423 - y, x), &raw_depth, &ir_sum);
+
+//        depth_ir_sum_ptr->val[0] = raw_depth;
+//        depth_ir_sum_ptr->val[1] = *m_max_edge_test_ptr == 1 ? raw_depth : 0;
+//        depth_ir_sum_ptr->val[2] = ir_sum;
+//      }
+
+//    m_max_edge_test_ptr = m_max_edge_test.ptr(0, 0);
+
+//    for(int y = 0; y < 424; ++y)
+//      for(int x = 0; x < 512; ++x, ++m_max_edge_test_ptr)
+//      {
+//        impl_->filterPixelStage2(x, y, depth_ir_sum, *m_max_edge_test_ptr == 1, out_depth.ptr(423 - y, x));
+//      }
+//  }
+//  else
+//  {
+//    for(int y = 0; y < 424; ++y)
+//      for(int x = 0; x < 512; ++x, m_ptr += 9)
+//      {
+//        impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, out_ir.ptr(423 - y, x), out_depth.ptr(423 - y, x), 0);
+//      }
+//  }
+
+//  impl_->stopTiming(LOG_INFO);
+
+//  if (listener_ != 0 ){
+//    if(listener_->onNewFrame(Frame::Ir, impl_->ir_frame))
+//    {
+//      impl_->newIrFrame();
+//    }
+
+//    if(listener_->onNewFrame(Frame::Depth, impl_->depth_frame))
+//    {
+//      impl_->newDepthFrame();
+//    }
+//  }
 
 }
 
