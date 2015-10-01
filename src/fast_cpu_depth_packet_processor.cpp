@@ -1002,10 +1002,18 @@ void CpuDepthPacketProcessor::process(const DepthPacket &packet)
   float *m_ptr = (m.ptr(0, 0)->val);
 
   for(int y = 0; y < 424; ++y)
-    for(int x = 0; x < 512; ++x, m_ptr += 9)
+  {
+    m_ptr[0] = m_ptr[1] = m_ptr[2] = m_ptr[3] = m_ptr[4] = m_ptr[5] = m_ptr[6] = m_ptr[7] = m_ptr[8] = 0;
+    m_ptr += 9;
+
+    for(int x = 1; x < 511; ++x, m_ptr += 9)
     {
       impl_->processPixelStage1(x, y, packet.buffer, m_ptr + 0, m_ptr + 3, m_ptr + 6);
     }
+
+    m_ptr[0] = m_ptr[1] = m_ptr[2] = m_ptr[3] = m_ptr[4] = m_ptr[5] = m_ptr[6] = m_ptr[7] = m_ptr[8] = 0;
+    m_ptr += 9;
+  }
 
   // bilateral filtering
   if(impl_->enable_bilateral_filter)
