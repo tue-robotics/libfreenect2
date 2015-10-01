@@ -290,6 +290,7 @@ inline int bfi(int width, int offset, int src2, int src3)
   return ((src2 << offset) & bitmask) | (src3 & ~bitmask);
 }
 
+// {{{
 class CpuDepthPacketProcessorImpl: public WithPerfLogging
 {
 public:
@@ -637,97 +638,79 @@ public:
     float ir_sum = m0[1] + m1[1] + m2[1];
 
     float phase;
-    // if(DISABLE_DISAMBIGUATION)
-    if(false)
-    {
-        //r0.yz = r3.zx + r4.zx // add
-        //r0.yz = r5.xz + r0.zy // add
-        float phase = m0[0] + m1[0] + m2[0]; // r0.y
-        float tmp1 = m0[2] + m1[2] + m2[2];  // r0.z
+    float ir_min = std::min(std::min(m0[1], m1[1]), m2[1]);
 
-        //r7.xyz = r3.zxy + r4.zxy // add
-        //r4.xyz = r5.zyx + r7.xzy // add
-        float tmp2 = m0[0] + m1[0] + m2[0]; // r4.z
-        //r3.zw = r4.xy // mov
-        float tmp3 = m0[2] + m1[2] + m2[2]; // r3.z
-        float tmp4 = m0[1] + m1[1] + m2[1]; // r3.w
+    if (ir_min < params.individual_ab_threshold || ir_sum < params.ab_threshold)
+    {
+      phase = 0;
     }
     else
     {
-      float ir_min = std::min(std::min(m0[1], m1[1]), m2[1]);
+      float t0 = m0[0] / (2.0f * M_PI) * 3.0f;
+      float t1 = m1[0] / (2.0f * M_PI) * 15.0f;
+      float t2 = m2[0] / (2.0f * M_PI) * 2.0f;
 
-      if (ir_min < params.individual_ab_threshold || ir_sum < params.ab_threshold)
-      {
-        phase = 0;
-      }
-      else
-      {
-        float t0 = m0[0] / (2.0f * M_PI) * 3.0f;
-        float t1 = m1[0] / (2.0f * M_PI) * 15.0f;
-        float t2 = m2[0] / (2.0f * M_PI) * 2.0f;
+      float t5 = (std::floor((t1 - t0) * 0.333333f + 0.5f) * 3.0f + t0);
+      float t3 = (-t2 + t5);
+      float t4 = t3 * 2.0f;
 
-        float t5 = (std::floor((t1 - t0) * 0.333333f + 0.5f) * 3.0f + t0);
-        float t3 = (-t2 + t5);
-        float t4 = t3 * 2.0f;
+      bool c1 = t4 >= -t4; // true if t4 positive
 
-        bool c1 = t4 >= -t4; // true if t4 positive
+      float f1 = c1 ? 2.0f : -2.0f;
+      float f2 = c1 ? 0.5f : -0.5f;
+      t3 *= f2;
+      t3 = (t3 - std::floor(t3)) * f1;
 
-        float f1 = c1 ? 2.0f : -2.0f;
-        float f2 = c1 ? 0.5f : -0.5f;
-        t3 *= f2;
-        t3 = (t3 - std::floor(t3)) * f1;
+      bool c2 = 0.5f < std::abs(t3) && std::abs(t3) < 1.5f;
 
-        bool c2 = 0.5f < std::abs(t3) && std::abs(t3) < 1.5f;
+      float t6 = c2 ? t5 + 15.0f : t5;
+      float t7 = c2 ? t1 + 15.0f : t1;
 
-        float t6 = c2 ? t5 + 15.0f : t5;
-        float t7 = c2 ? t1 + 15.0f : t1;
+      float t8 = (std::floor((-t2 + t6) * 0.5f + 0.5f) * 2.0f + t2) * 0.5f;
 
-        float t8 = (std::floor((-t2 + t6) * 0.5f + 0.5f) * 2.0f + t2) * 0.5f;
+      t6 *= 0.333333f; // = / 3
+      t7 *= 0.066667f; // = / 15
 
-        t6 *= 0.333333f; // = / 3
-        t7 *= 0.066667f; // = / 15
+      float t9 = (t8 + t6 + t7); // transformed phase measurements (they are transformed and divided by the values the original values were multiplied with)
+      float t10 = t9 * 0.333333f; // some avg
 
-        float t9 = (t8 + t6 + t7); // transformed phase measurements (they are transformed and divided by the values the original values were multiplied with)
-        float t10 = t9 * 0.333333f; // some avg
+      t6 *= 2.0f * M_PI;
+      t7 *= 2.0f * M_PI;
+      t8 *= 2.0f * M_PI;
 
-        t6 *= 2.0f * M_PI;
-        t7 *= 2.0f * M_PI;
-        t8 *= 2.0f * M_PI;
+      // some cross product
+      float t8_new = t7 * 0.826977f - t8 * 0.110264f;
+      float t6_new = t8 * 0.551318f - t6 * 0.826977f;
+      float t7_new = t6 * 0.110264f - t7 * 0.551318f;
 
-        // some cross product
-        float t8_new = t7 * 0.826977f - t8 * 0.110264f;
-        float t6_new = t8 * 0.551318f - t6 * 0.826977f;
-        float t7_new = t6 * 0.110264f - t7 * 0.551318f;
+      t8 = t8_new;
+      t6 = t6_new;
+      t7 = t7_new;
 
-        t8 = t8_new;
-        t6 = t6_new;
-        t7 = t7_new;
+      float norm = t8 * t8 + t6 * t6 + t7 * t7;
+      float mask = t9 >= 0.0f ? 1.0f : 0.0f;
+      t10 *= mask;
 
-        float norm = t8 * t8 + t6 * t6 + t7 * t7;
-        float mask = t9 >= 0.0f ? 1.0f : 0.0f;
-        t10 *= mask;
+      bool slope_positive = 0 < params.ab_confidence_slope;
 
-        bool slope_positive = 0 < params.ab_confidence_slope;
+      float ir_min_ = std::min(std::min(m0[1], m1[1]), m2[1]);
+      float ir_max_ = std::max(std::max(m0[1], m1[1]), m2[1]);
 
-        float ir_min_ = std::min(std::min(m0[1], m1[1]), m2[1]);
-        float ir_max_ = std::max(std::max(m0[1], m1[1]), m2[1]);
+      float ir_x = slope_positive ? ir_min_ : ir_max_;
 
-        float ir_x = slope_positive ? ir_min_ : ir_max_;
+      ir_x = std::log(ir_x);
+      ir_x = (ir_x * params.ab_confidence_slope * 0.301030f + params.ab_confidence_offset) * 3.321928f;
+      ir_x = std::exp(ir_x);
+      ir_x = std::min(params.max_dealias_confidence, std::max(params.min_dealias_confidence, ir_x));
+      ir_x *= ir_x;
 
-        ir_x = std::log(ir_x);
-        ir_x = (ir_x * params.ab_confidence_slope * 0.301030f + params.ab_confidence_offset) * 3.321928f;
-        ir_x = std::exp(ir_x);
-        ir_x = std::min(params.max_dealias_confidence, std::max(params.min_dealias_confidence, ir_x));
-        ir_x *= ir_x;
+      float mask2 = ir_x >= norm ? 1.0f : 0.0f;
 
-        float mask2 = ir_x >= norm ? 1.0f : 0.0f;
+      float t11 = t10 * mask2;
 
-        float t11 = t10 * mask2;
-
-        float mask3 = params.max_dealias_confidence * params.max_dealias_confidence >= norm ? 1.0f : 0.0f;
-        t10 *= mask3;
-        phase = true/*(modeMask & 2) != 0*/ ? t11 : t10;
-      }
+      float mask3 = params.max_dealias_confidence * params.max_dealias_confidence >= norm ? 1.0f : 0.0f;
+      t10 *= mask3;
+      phase = true/*(modeMask & 2) != 0*/ ? t11 : t10;
     }
 
     // this seems to be the phase to depth mapping :)
@@ -842,6 +825,329 @@ public:
 
     // override raw depth
     depth_and_ir_sum.val[0] = depth_and_ir_sum.val[1];
+  }
+// }}}
+
+  void processStages(unsigned char *data, Mat<Vec<float, 9> > &m, Mat<float> &out_ir, Mat<float> &out_depth)
+  {
+    float *m_ptr = m.ptr(0, 0)->val;
+
+    for(int y = 0; y < 424; ++y)
+    {
+      for(int x = 0; x < 512; ++x, m_ptr += 9)
+      {
+
+// -----------------------------------------------------------------------
+// Start processPixelStage1(x, y, data, m_ptr + 0, m_ptr + 3, m_ptr + 6);
+
+        int32_t __attribute__((aligned (16))) m0_raw[4], m1_raw[4], m2_raw[4]; // [3] is never used.
+
+// {{{ 9x decode pixel
+        if (x < 1 || 510 < x)
+        {
+          m0_raw[0] = m0_raw[1] = m0_raw[2] =
+          m1_raw[0] = m1_raw[1] = m1_raw[2] =
+          m2_raw[0] = m2_raw[1] = m2_raw[2] = lut11to16[0];
+        }
+        else
+        {
+          // 298496 = 512 * 424 * 11 / 8 = number of bytes per sub image
+          uint16_t *ptr = reinterpret_cast<uint16_t *>(data); // + 298496 * sub);
+          int i = y < 212 ? y + 212 : 423 - y;
+          ptr += 352*i;
+
+          int r1zi = (x >> 2) + ((x & 0x3) << 7); // range 1..510
+          r1zi = r1zi * 11L; // range 11..5610
+          int r1yi = r1zi >> 4; // range 0..350
+          r1zi = r1zi & 15;
+
+          uint16_t i1, i2;
+
+          i1 = ptr[r1yi] >> r1zi;
+          i2 = ptr[r1yi + 1] << (16 - r1zi);
+          m0_raw[0] = lut11to16[((i1 | i2) & 2047)];
+
+          ptr += 298496 / 2;
+          i1 = ptr[r1yi] >> r1zi;
+          i2 = ptr[r1yi + 1] << (16 - r1zi);
+          m0_raw[1] = lut11to16[((i1 | i2) & 2047)];
+
+          ptr += 298496 / 2;
+          i1 = ptr[r1yi] >> r1zi;
+          i2 = ptr[r1yi + 1] << (16 - r1zi);
+          m0_raw[2] = lut11to16[((i1 | i2) & 2047)];
+
+          ptr += 298496 / 2;
+          i1 = ptr[r1yi] >> r1zi;
+          i2 = ptr[r1yi + 1] << (16 - r1zi);
+          m1_raw[0] = lut11to16[((i1 | i2) & 2047)];
+
+          ptr += 298496 / 2;
+          i1 = ptr[r1yi] >> r1zi;
+          i2 = ptr[r1yi + 1] << (16 - r1zi);
+          m1_raw[1] = lut11to16[((i1 | i2) & 2047)];
+
+          ptr += 298496 / 2;
+          i1 = ptr[r1yi] >> r1zi;
+          i2 = ptr[r1yi + 1] << (16 - r1zi);
+          m1_raw[2] = lut11to16[((i1 | i2) & 2047)];
+
+          ptr += 298496 / 2;
+          i1 = ptr[r1yi] >> r1zi;
+          i2 = ptr[r1yi + 1] << (16 - r1zi);
+          m2_raw[0] = lut11to16[((i1 | i2) & 2047)];
+
+          ptr += 298496 / 2;
+          i1 = ptr[r1yi] >> r1zi;
+          i2 = ptr[r1yi + 1] << (16 - r1zi);
+          m2_raw[1] = lut11to16[((i1 | i2) & 2047)];
+
+          ptr += 298496 / 2;
+          i1 = ptr[r1yi] >> r1zi;
+          i2 = ptr[r1yi + 1] << (16 - r1zi);
+          m2_raw[2] = lut11to16[((i1 | i2) & 2047)];
+
+        }
+// }}}
+
+        float zmultiplier = z_table.at(y, x);
+        if (0 < zmultiplier)
+        {
+          int offset = y * 512 + x;
+    // {{{
+          if (m0_raw[0] == 32767 || m0_raw[1] == 32767 || m0_raw[2] == 32767)
+          {
+            m_ptr[0] = m_ptr[1] = 0;
+            m_ptr[2] = 65535.0;
+          }
+          else
+          {
+            float cos_tmp0 = trig_table0[offset][0];
+            float cos_tmp1 = trig_table0[offset][1];
+            float cos_tmp2 = trig_table0[offset][2];
+            float sin_negtmp0 = trig_table0[offset][3];
+            float sin_negtmp1 = trig_table0[offset][4];
+            float sin_negtmp2 = trig_table0[offset][5];
+            float ir_image_a = cos_tmp0 * m0_raw[0] + cos_tmp1 * m0_raw[1] + cos_tmp2 * m0_raw[2];
+            float ir_image_b = sin_negtmp0 * m0_raw[0] + sin_negtmp1 * m0_raw[1] + sin_negtmp2 * m0_raw[2];
+            ir_image_a *= params.ab_multiplier_per_frq[0];
+            ir_image_b *= params.ab_multiplier_per_frq[0];
+            m_ptr[0] = ir_image_a;
+            m_ptr[1] = ir_image_b;
+            m_ptr[2] = std::sqrt(ir_image_a * ir_image_a + ir_image_b * ir_image_b) * params.ab_multiplier;
+          }
+    // }}}
+    // {{{
+          if (m1_raw[0] == 32767 || m1_raw[1] == 32767 || m1_raw[2] == 32767)
+          {
+            m_ptr[3] = m_ptr[4] = 0;
+            m_ptr[5] = 65535.0;
+          }
+          else
+          {
+            float cos_tmp0 = trig_table1[offset][0];
+            float cos_tmp1 = trig_table1[offset][1];
+            float cos_tmp2 = trig_table1[offset][2];
+            float sin_negtmp0 = trig_table1[offset][3];
+            float sin_negtmp1 = trig_table1[offset][4];
+            float sin_negtmp2 = trig_table1[offset][5];
+            float ir_image_a = cos_tmp0 * m1_raw[0] + cos_tmp1 * m1_raw[1] + cos_tmp2 * m1_raw[2];
+            float ir_image_b = sin_negtmp0 * m1_raw[0] + sin_negtmp1 * m1_raw[1] + sin_negtmp2 * m1_raw[2];
+            ir_image_a *= params.ab_multiplier_per_frq[1];
+            ir_image_b *= params.ab_multiplier_per_frq[1];
+            m_ptr[3] = ir_image_a;
+            m_ptr[4] = ir_image_b;
+            m_ptr[5] = std::sqrt(ir_image_a * ir_image_a + ir_image_b * ir_image_b) * params.ab_multiplier;
+          }
+    // }}}
+    // {{{
+          if (m2_raw[0] == 32767 || m2_raw[1] == 32767 || m2_raw[2] == 32767)
+          {
+            m_ptr[6] = m_ptr[7] = 0;
+            m_ptr[8] = 65535.0;
+          }
+          else
+          {
+            float cos_tmp0 = trig_table2[offset][0];
+            float cos_tmp1 = trig_table2[offset][1];
+            float cos_tmp2 = trig_table2[offset][2];
+            float sin_negtmp0 = trig_table2[offset][3];
+            float sin_negtmp1 = trig_table2[offset][4];
+            float sin_negtmp2 = trig_table2[offset][5];
+            float ir_image_a = cos_tmp0 * m2_raw[0] + cos_tmp1 * m2_raw[1] + cos_tmp2 * m2_raw[2];
+            float ir_image_b = sin_negtmp0 * m2_raw[0] + sin_negtmp1 * m2_raw[1] + sin_negtmp2 * m2_raw[2];
+            ir_image_a *= params.ab_multiplier_per_frq[2];
+            ir_image_b *= params.ab_multiplier_per_frq[2];
+            m_ptr[6] = ir_image_a;
+            m_ptr[7] = ir_image_b;
+            m_ptr[8] = std::sqrt(ir_image_a * ir_image_a + ir_image_b * ir_image_b) * params.ab_multiplier;
+          }
+    // }}}
+
+        }
+        else
+        {
+          // Invalid pixel.
+          m_ptr[0] = m_ptr[1] = m_ptr[2] = m_ptr[3] = m_ptr[4] = m_ptr[5] = m_ptr[6] = m_ptr[7] = m_ptr[8] = 0;
+        }
+
+// End   processPixelStage1(x, y, data, m_ptr + 0, m_ptr + 3, m_ptr + 6);
+// -----------------------------------------------------------------------
+
+// ################################################################################################
+// ################################################################################################
+// ################################################################################################
+// ################################################################################################
+
+        float *ir_out = out_ir.ptr(423 - y, x);
+        float * depth_out = out_depth.ptr(423 - y, x);
+
+        float *m0 = m_ptr + 0;
+        float *m1 = m_ptr + 3;
+        float *m2 = m_ptr + 6;
+//        processPixelStage2(x, y, m0, m1, m2, ir_out, depth_out, 0);
+
+    float tmp0, tmp1;
+
+    tmp0 = std::atan2((m0[1]), (m0[0]));
+    tmp0 = tmp0 < 0 ? tmp0 + M_PI * 2.0f : tmp0;
+    tmp0 = (tmp0 != tmp0) ? 0 : tmp0;
+    tmp1 = std::sqrt(m0[0] * m0[0] + m0[1] * m0[1]) * params.ab_multiplier;
+    m0[0] = tmp0; // phase
+    m0[1] = tmp1; // ir amplitude - (possibly bilateral filtered)
+
+    tmp0 = std::atan2((m1[1]), (m1[0]));
+    tmp0 = tmp0 < 0 ? tmp0 + M_PI * 2.0f : tmp0;
+    tmp0 = (tmp0 != tmp0) ? 0 : tmp0;
+    tmp1 = std::sqrt(m1[0] * m1[0] + m1[1] * m1[1]) * params.ab_multiplier;
+    m1[0] = tmp0; // phase
+    m1[1] = tmp1; // ir amplitude - (possibly bilateral filtered)
+
+    tmp0 = std::atan2((m2[1]), (m2[0]));
+    tmp0 = tmp0 < 0 ? tmp0 + M_PI * 2.0f : tmp0;
+    tmp0 = (tmp0 != tmp0) ? 0 : tmp0;
+    tmp1 = std::sqrt(m2[0] * m2[0] + m2[1] * m2[1]) * params.ab_multiplier;
+    m2[0] = tmp0; // phase
+    m2[1] = tmp1; // ir amplitude - (possibly bilateral filtered)
+
+        float ir_sum = m0[1] + m1[1] + m2[1];
+
+        float phase;
+        // if(DISABLE_DISAMBIGUATION)
+        if(false)
+        {
+            //r0.yz = r3.zx + r4.zx // add
+            //r0.yz = r5.xz + r0.zy // add
+            float phase = m0[0] + m1[0] + m2[0]; // r0.y
+            float tmp1 = m0[2] + m1[2] + m2[2];  // r0.z
+
+            //r7.xyz = r3.zxy + r4.zxy // add
+            //r4.xyz = r5.zyx + r7.xzy // add
+            float tmp2 = m0[0] + m1[0] + m2[0]; // r4.z
+            //r3.zw = r4.xy // mov
+            float tmp3 = m0[2] + m1[2] + m2[2]; // r3.z
+            float tmp4 = m0[1] + m1[1] + m2[1]; // r3.w
+        }
+        else
+        {
+          float ir_min = std::min(std::min(m0[1], m1[1]), m2[1]);
+
+          if (ir_min < params.individual_ab_threshold || ir_sum < params.ab_threshold)
+          {
+            phase = 0;
+          }
+          else
+          {
+            float t0 = m0[0] / (2.0f * M_PI) * 3.0f;
+            float t1 = m1[0] / (2.0f * M_PI) * 15.0f;
+            float t2 = m2[0] / (2.0f * M_PI) * 2.0f;
+
+            float t5 = (std::floor((t1 - t0) * 0.333333f + 0.5f) * 3.0f + t0);
+            float t3 = (-t2 + t5);
+            float t4 = t3 * 2.0f;
+
+            bool c1 = t4 >= -t4; // true if t4 positive
+
+            float f1 = c1 ? 2.0f : -2.0f;
+            float f2 = c1 ? 0.5f : -0.5f;
+            t3 *= f2;
+            t3 = (t3 - std::floor(t3)) * f1;
+
+            bool c2 = 0.5f < std::abs(t3) && std::abs(t3) < 1.5f;
+
+            float t6 = c2 ? t5 + 15.0f : t5;
+            float t7 = c2 ? t1 + 15.0f : t1;
+
+            float t8 = (std::floor((-t2 + t6) * 0.5f + 0.5f) * 2.0f + t2) * 0.5f;
+
+            t6 *= 0.333333f; // = / 3
+            t7 *= 0.066667f; // = / 15
+
+            float t9 = (t8 + t6 + t7); // transformed phase measurements (they are transformed and divided by the values the original values were multiplied with)
+            float t10 = t9 * 0.333333f; // some avg
+
+            t6 *= 2.0f * M_PI;
+            t7 *= 2.0f * M_PI;
+            t8 *= 2.0f * M_PI;
+
+            // some cross product
+            float t8_new = t7 * 0.826977f - t8 * 0.110264f;
+            float t6_new = t8 * 0.551318f - t6 * 0.826977f;
+            float t7_new = t6 * 0.110264f - t7 * 0.551318f;
+
+            t8 = t8_new;
+            t6 = t6_new;
+            t7 = t7_new;
+
+            float norm = t8 * t8 + t6 * t6 + t7 * t7;
+            float mask = t9 >= 0.0f ? 1.0f : 0.0f;
+            t10 *= mask;
+
+            bool slope_positive = 0 < params.ab_confidence_slope;
+
+            float ir_min_ = std::min(std::min(m0[1], m1[1]), m2[1]);
+            float ir_max_ = std::max(std::max(m0[1], m1[1]), m2[1]);
+
+            float ir_x = slope_positive ? ir_min_ : ir_max_;
+
+            ir_x = std::log(ir_x);
+            ir_x = (ir_x * params.ab_confidence_slope * 0.301030f + params.ab_confidence_offset) * 3.321928f;
+            ir_x = std::exp(ir_x);
+            ir_x = std::min(params.max_dealias_confidence, std::max(params.min_dealias_confidence, ir_x));
+            ir_x *= ir_x;
+
+            float mask2 = ir_x >= norm ? 1.0f : 0.0f;
+
+            float t11 = t10 * mask2;
+
+            phase = t11;
+          }
+        }
+
+        // this seems to be the phase to depth mapping :)
+        float zmultiplier2 = z_table.at(y, x);
+        float xmultiplier = x_table.at(y, x);
+
+        phase = 0 < phase ? phase + params.phase_offset : phase;
+
+        float depth_linear = zmultiplier2 * phase;
+        float max_depth = phase * params.unambigious_dist * 2;
+
+        bool cond1 = 0 < depth_linear && 0 < max_depth;
+
+        xmultiplier = (xmultiplier * 90) / (max_depth * max_depth * 8192.0);
+
+        float depth_fit = depth_linear / (-depth_linear * xmultiplier + 1);
+
+        depth_fit = depth_fit < 0 ? 0 : depth_fit;
+        float depth = cond1 ? depth_fit : depth_linear; // r1.y -> later r2.z
+
+        // depth
+        *depth_out = depth;
+        *ir_out = std::min((m0[2] + m1[2] + m2[2]) * 0.3333333f * params.ab_output_multiplier, 65535.0f);
+
+      }
+    }
   }
 };
 
@@ -1027,72 +1333,9 @@ void CpuDepthPacketProcessor::process(const DepthPacket &packet)
       m_filtered(424, 512)
   ;
   Mat<unsigned char> m_max_edge_test(424, 512);
-
-  float *m_ptr = (m.ptr(0, 0)->val);
-
-  for(int y = 0; y < 424; ++y)
-    for(int x = 0; x < 512; ++x, m_ptr += 9)
-    {
-      impl_->processPixelStage1(x, y, packet.buffer, m_ptr + 0, m_ptr + 3, m_ptr + 6);
-    }
-
-  // bilateral filtering
-  if(impl_->enable_bilateral_filter)
-  {
-    float *m_filtered_ptr = (m_filtered.ptr(0, 0)->val);
-    unsigned char *m_max_edge_test_ptr = m_max_edge_test.ptr(0, 0);
-
-    for(int y = 0; y < 424; ++y)
-      for(int x = 0; x < 512; ++x, m_filtered_ptr += 9, ++m_max_edge_test_ptr)
-      {
-        bool max_edge_test_val = true;
-        impl_->filterPixelStage1(x, y, m, m_filtered_ptr, max_edge_test_val);
-        *m_max_edge_test_ptr = max_edge_test_val ? 1 : 0;
-      }
-
-    m_ptr = (m_filtered.ptr(0, 0)->val);
-  }
-  else
-  {
-    m_ptr = (m.ptr(0, 0)->val);
-  }
-
   Mat<float> out_ir(424, 512, impl_->ir_frame->data), out_depth(424, 512, impl_->depth_frame->data);
 
-  if(impl_->enable_edge_filter)
-  {
-    Mat<Vec<float, 3> > depth_ir_sum(424, 512);
-    Vec<float, 3> *depth_ir_sum_ptr = depth_ir_sum.ptr(0, 0);
-    unsigned char *m_max_edge_test_ptr = m_max_edge_test.ptr(0, 0);
-
-    for(int y = 0; y < 424; ++y)
-      for(int x = 0; x < 512; ++x, m_ptr += 9, ++m_max_edge_test_ptr, ++depth_ir_sum_ptr)
-      {
-        float raw_depth, ir_sum;
-
-        impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, out_ir.ptr(423 - y, x), &raw_depth, &ir_sum);
-
-        depth_ir_sum_ptr->val[0] = raw_depth;
-        depth_ir_sum_ptr->val[1] = *m_max_edge_test_ptr == 1 ? raw_depth : 0;
-        depth_ir_sum_ptr->val[2] = ir_sum;
-      }
-
-    m_max_edge_test_ptr = m_max_edge_test.ptr(0, 0);
-
-    for(int y = 0; y < 424; ++y)
-      for(int x = 0; x < 512; ++x, ++m_max_edge_test_ptr)
-      {
-        impl_->filterPixelStage2(x, y, depth_ir_sum, *m_max_edge_test_ptr == 1, out_depth.ptr(423 - y, x));
-      }
-  }
-  else
-  {
-    for(int y = 0; y < 424; ++y)
-      for(int x = 0; x < 512; ++x, m_ptr += 9)
-      {
-        impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, out_ir.ptr(423 - y, x), out_depth.ptr(423 - y, x), 0);
-      }
-  }
+  impl_->processStages(packet.buffer, m, out_ir, out_depth);
 
   impl_->stopTiming(LOG_INFO);
 
