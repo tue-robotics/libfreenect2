@@ -790,9 +790,10 @@ void CpuDepthPacketProcessor::process(const DepthPacket &packet)
     }
 
     m_ptr = m_line.val[0].val;
-    for(int x = 0; x < 512; ++x, m_ptr += 9)
+    float *depth_out = out_depth.ptr(423 - y, 0);
+    for(int x = 0; x < 512; ++x, m_ptr += 9, ++depth_out)
     {
-      impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, out_depth.ptr(423 - y, x));
+      impl_->processPixelStage2(x, y, m_ptr + 0, m_ptr + 3, m_ptr + 6, depth_out);
     }
   }
 
